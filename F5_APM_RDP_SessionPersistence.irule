@@ -1,0 +1,312 @@
+# This is an APM session and persistence management script for RDP server.
+# There is some crucial initialization part out of this iRule
+# Ther must be pool definition which we can use to check actual health status of servers.
+# There are three table that maintains user sessions (uSessions), sessions on servers (sessionCount)
+# and some other caring functionalities (userTable)
+# table uSessions: <username> <PersistentServerIP> indef $static::lifespan
+# table sessionCount: <rdpServerIP> <AmountofActiveSessions> indef $static::lifespan
+# table userTable: <username> <Session SID of APM>	indef	$static::lifespan
+
+proc pickOneAvailable { } {
+	# check each member status of pool and connection counts
+	# if any of them healty, we can move on
+	# if not, return old school NULL
+	set n1Count [table lookup -subtable sessionCount $static::n1IP]
+	if { ($n1Count == "") || ($n1Count < 0) } {
+		set n1Count 0
+		table set -subtable sessionCount $static::n1IP 0 indef $static::lifespan
+	}
+	set n1Lifetime [table lifetime -subtable sessionCount $static::n1IP] 
+	if { ($n1Lifetime < 0) || ($n1Lifetime == "") } { table lifetime -subtable sessionCount $static::n1IP $static::lifespan }
+	
+	set n2Count [table lookup -subtable sessionCount $static::n2IP]
+	if { ($n2Count == "") || ($n2Count < 0) } {
+		set n2Count 0
+		table set -subtable sessionCount $static::n2IP 0 indef $static::lifespan
+	}
+	set n2Lifetime [table lifetime -subtable sessionCount $static::n2IP] 
+	if { ($n2Lifetime < 0) || ($n2Lifetime == "") } { table lifetime -subtable sessionCount $static::n2IP $static::lifespan }
+	
+	set n3Count [table lookup -subtable sessionCount $static::n3IP]
+	if { ($n3Count == "") || ($n3Count < 0) } {
+		set n3Count 0
+		table set -subtable sessionCount $static::n3IP 0 indef $static::lifespan
+	}
+	set n3Lifetime [table lifetime -subtable sessionCount $static::n3IP]
+	if { ($n3Lifetime < 0) || ($n3Lifetime == "") } { table lifetime -subtable sessionCount $static::n3IP $static::lifespan }
+	
+	if { $static::debugopt } { log local0. "DEBUG(pOA) Count1: $n1Count Count2: $n2Count Count3: $n3Count" }
+	
+	set n1Health [LB::status pool [b64decode $static::pNameEnc] member $static::n1IP 3389]
+	set n2Health [LB::status pool [b64decode $static::pNameEnc] member $static::n2IP 3389]
+	set n3Health [LB::status pool [b64decode $static::pNameEnc] member $static::n3IP 3389]
+	
+	if { $static::debugopt } { log local0. "DEBUG(pOA) Health1($static::n1IP): $n1Health - Health2($static::n2IP): $n2Health - Health3($static::n3IP): $n3Health" }
+	
+	# Sorting and indexing
+	set tM(0) "$static::n1IP $n1Count $n1Health"
+	set tM(1) "$static::n2IP $n2Count $n2Health"
+	set tM(2) "$static::n3IP $n3Count $n3Health"
+	#if { $static::debugopt } {
+	#     log local0. "DEBUG(pOA) unSorted:0 - $tM(0)"
+	#     log local0. "DEBUG(pOA) unSorted:1 - $tM(1)"
+	#     log local0. "DEBUG(pOA) unSorted:2 - $tM(2)"
+	#}
+	for { set i 1 } { $i < [array size tM] } { incr i } {
+		for { set j $i } { $j > 0 } { incr j -1 } {
+			if { [lindex $tM($j) 1] < [lindex $tM([expr $j -1]) 1] } {
+				set tmp "$tM($j)"
+				set tM($j)  "$tM([expr $j -1])"
+				set tM([expr $j -1]) "$tmp"
+				unset tmp
+			}
+		}
+	}
+	#if { $static::debugopt } {
+	#    log local0. "DEBUG(pOA) Sort Complete :0 [list $tM(0)]"
+	#    log local0. "DEBUG(pOA) Sort Complete :1 [list $tM(1)]"
+	#    log local0. "DEBUG(pOA) Sort Complete :2 [list $tM(2)]"
+    #    }
+        
+	if { [lindex $tM(0) 2] == "up" } then { 
+	       table incr -subtable sessionCount [lindex $tM(0) 0]
+	       log local0. "DEBUG(pOA) [lindex $tM(0) 0]"
+	       set retVal [lindex $tM(0) 0] 
+	   } elseif { [lindex $tM(1) 2] == "up" } then {
+	       table incr -subtable sessionCount [lindex $tM(1) 0]
+	       log local0. "DEBUG(pOA) [lindex $tM(1) 0]"
+	       set retVal [lindex $tM(1) 0]
+	   } elseif { [lindex $tM(2) 2] == "up" } then {
+	       table incr -subtable sessionCount [lindex $tM(2) 0]
+	       log local0. "DEBUG(pOA) [lindex $tM(2) 0]"
+	       set retVal [lindex $tM(2) 0]
+	   } else {
+	       set retVal  "NULL"
+	   }
+}
+proc dumpSessions { } {
+    # Show all user sessions on servers
+    log local0. "DEBUG(dS) Table of Sessions on Servers"
+    log local0. "DEBUG(dS) | ServerIP | ConnecionCount | RemainingLifeTime |"
+    foreach keys [table keys -subtable sessionCount] {
+		set lft [table lifetime -subtable sessionCount -remaining $keys]
+        log local0. "DEBUG(dS)  $keys   [table lookup -subtable sessionCount $keys]  $lft"
+    }
+}
+proc clearUserTable { } {
+    # Detect invalid records and clean it from userTable
+	foreach keys [table keys -subtable userTable] {
+		set sessionSID [table lookup -subtable userTable $keys]
+		if { ! [ACCESS::session exists -sid $sessionSID] } {
+		    log local0. "DEBUG(cUT) - Session SID can not found $sessionSID for user $keys"
+		    set persistIP [table lookup -subtable uSessions $keys]
+		    set count [table lookup -subtable sessionCount $persistIP]
+		    if { ($count != 0) && ($count != "") } { incr count -1 }
+		    table set -notouch -subtable sessionCount $persistIP $count
+		    table delete -subtable userTable $keys
+		}
+	}
+	if { [table keys -subtable userTable -count] == 0 } {
+	    log local0. "Debug(cUT) There is no user logged in"
+		table set -notouch -subtable sessionCount $static::n1IP 0
+		table set -notouch -subtable sessionCount $static::n2IP 0
+		table set -notouch -subtable sessionCount $static::n3IP 0
+	}
+}
+proc addUserTable { _uName _SID } {
+	# Add new user to UserTable (but just userTable)
+	if { ($_uName != "") && ($_SID != "") } {
+	 	table set -subtable userTable $_uName $_SID indef $static::lifespan
+	} else {
+		log local0. "DEBUG(aUT) Sorry. Either, UserName $_uName or SessionSID $_SID is invalid"
+	}
+}
+proc dumpUserTable { } {
+	# Show all users already logged in
+	log local0. "DEBUG(dUT) Table of logged users in and their sessions"
+    log local0. "DEBUG(dUT) | LogonName | ConnectionID | RemainingLifeTime |"
+	foreach keys [table keys -subtable userTable] {
+	    set lft [table lifetime -subtable userTable -remaining $keys]
+        log local0. "DEBUG(dUT)  $keys  [table lookup -subtable userTable $keys]  $lft"
+    }
+}
+proc dumpUsers { } {
+    # Show how many users are active
+    log local0. "DEBUG(dU) Table of Persistency Records"
+    log local0. "DEBUG(dU) | UserName | PersistentIP | RemainingLifeTime |"
+    foreach keys [table keys -subtable uSessions] {
+		set lft [table lifetime -subtable uSessions -remaining $keys]
+		log local0. "DEBUG(dU)  $keys   [table lookup -subtable uSessions $keys]  $lft"
+    }
+}
+proc checkHealth { nodeIP } {
+	# Look for health status of the node. If ok return "1",
+	# if not, return "0" (zero)
+	if { [LB::status pool [b64decode $static::pNameEnc] member $nodeIP 3389] == "up" } {
+		return 1
+	} else {
+		return 0
+	}
+	return "NULL"
+}
+when RULE_INIT {
+
+    # Need more details, you know what to do
+    set static::debugopt 1
+    set static::n1IP "10.34.24.200"
+    set static::n2IP "10.34.26.101"
+    set static::n3IP "10.34.26.102"
+    set static::pNameEnc "aUFwcC1SRFAtMS5hcHAvaUFwcC1SRFAtMV90Y3BfcG9vbA=="
+    set static::lifespan 3600
+    
+}
+when ACCESS_POLICY_AGENT_EVENT {
+  
+  log local0. "Test agent event0"
+  
+  switch -glob [ACCESS::policy agent_id] {
+  
+  "PopulateDestIP" {
+     # Populate variable "session.logon.rdp.dest" with a node IP in our pool
+     # We are going to keep pool name as a secret because we are working a virtual server that must be
+     # available all the time whether the pool status up or down
+     if { $static::debugopt } {
+        log local0. " - PopulateDestIP - "
+        #log local0. "$static::n1IP status is : [LB::status pool [b64decode $static::pNameEnc] member $static::n1IP 3389]" 
+        #log local0. "$static::n2IP status is : [LB::status pool [b64decode $static::pNameEnc] member $static::n2IP 3389]"
+        #log local0. "$static::n3IP status is : [LB::status pool [b64decode $static::pNameEnc] member $static::n3IP 3389]"
+     }
+     # get Username and check if he/she has a session already 
+     set uName [ACCESS::session data get session.logon.last.username]
+     set sessionSID [ACCESS::session sid]; log local0. "DEBUG ACCESS SID = $sessionSID"
+     set persistRecord [table lookup -subtable uSessions $uName]
+     if {$persistRecord == "" }{
+		 
+        # So, no session. Pick a available server and send user to that.
+        if { $static::debugopt } { log local0. "DEBUG(0) User $uName has no session" }
+        # call pickOneAvailable function for pick a pool member
+        set nextNode [call pickOneAvailable]
+           if { $nextNode == "NULL" } {
+			    
+			log local0. "Sorry, No Member could pick from [b64decode $static::pNameEnc]. Can not continue"
+			# Set some error check mechanism to stop APM session here.
+			
+		   } else {
+			   
+				# Now we can move on with $nextNode
+				table set -subtable uSessions $uName "$nextNode" indef $static::lifespan
+                call addUserTable $uName $sessionSID
+				call clearUserTable
+				ACCESS::session data set "session.logon.rdp.dest" $nextNode
+				if { $static::debugopt } {
+				        log local0. "DEBUG(0) No session found for user $uName - NextAvailableNode: $nextNode - session.logon.rdp.dest [ACCESS::session data get session.logon.rdp.dest]"
+	                    log local0. "DEBUG(0) [call dumpSessions]"
+	                    log local0. "DEBUG(0) [call dumpUsers]"
+	                    log local0. "DEBUG(0) [call dumpUserTable]"
+				}
+				
+		   }
+       
+     } else {
+		 
+		# Read persistency record and try to determine it is still available. 
+		# If so, continue. If not, try another available node.
+		set res [call checkHealth $persistRecord]
+        if { $res == "NULL" } {
+			
+				log local0. "ERROR: Most Probably the IP address returned from the persistence table is wrong : $persistRecord" 
+			
+		} elseif { $res } {
+			
+			call clearUserTable
+			call addUserTable $uName $sessionSID
+			table incr -subtable sessionCount $persistRecord
+			ACCESS::session data set "session.logon.rdp.dest" $persistRecord
+			if { $static::debugopt } {
+			    	log local0. "DEBUG(1) User has a session persistence record to server [table lookup -subtable uSessions $uName]"
+				    log local0. "DEBUG(1) All Users List Connected : [table keys -subtable userTable]"
+				    log local0. "DEBUG(1) User goes to server: session.logon.rdp.dest [ACCESS::session data get session.logon.rdp.dest]"
+                    log local0. "DEBUG(1) [call dumpSessions]"
+                    log local0. "DEBUG(1) [call dumpUsers]"
+                    log local0. "DEBUG(1) [call dumpUserTable]"
+				}
+			
+		} else {
+			
+			set nAvailNode [call pickOneAvailable]
+			if { $nAvailNode == "NULL" } {
+				    
+				log local0. "Sorry, No Member could pick from [b64decode $static::pNameEnc]. Can not continue" 
+			
+		   } else { 
+			   
+				# Now we can move on with $nextNode
+				table set -subtable uSessions $uName "$nAvailNode" indef $static::lifespan
+				call addUserTable $uName $sessionSID
+				call clearUserTable
+				ACCESS::session data set "session.logon.rdp.dest" $nAvailNode
+				if { $static::debugopt } {
+					log local0. "DEBUG(2) User has persist record but server is not UP. So, we are continue with another one: session.logon.rdp.dest [ACCESS::session data get session.logon.rdp.dest]"
+                    log local0. "DEBUG(2) [call dumpSessions]"
+                    log local0. "DEBUG(2) [call dumpUsers]"
+                    log local0. "DEBUG(2) [call dumpUserTable]"
+				}
+			
+		   }
+			
+		}
+ 
+     }
+     unset persistRecord
+     unset uName
+     unset sessionSID
+  }
+  
+  "ActivePoolMemberCount" {
+      # Check amount of active members of our pool
+      log local0. " - ActivePoolMemberCount - "
+      set pName [b64decode $static::pNameEnc]
+      
+      if {[active_members $pName ] == 0 }{
+      
+			log local0. "Sorry, there is no pool member available, can't continue"
+			ACCESS::session data set session.logon.error 101
+      
+      } else {
+      
+			ACCESS::session data set session.logon.error 0
+      
+      }
+      
+      unset pName
+  }
+}
+}
+when HTTP_REQUEST {
+    # Try to catch when people logout
+    # Delete user from userTable Which we store users logged in
+    # Decrease one session count on persistent node of user persistency
+    if { [HTTP::uri] starts_with "/vdesk/hangup.php3?hangup_error=" } {
+        set UserName [ACCESS::session data get session.logon.last.username]
+        if { $UserName != "" } {
+            if { $static::debugopt } {
+                log local0. "DEBUG(3) Logout UserName - $UserName"
+                log local0. "DEBUG(3) User SesionID - [ACCESS::session data get session.user.sessionid]"
+            }
+            table delete -subtable userTable $UserName
+            set persistIP [table lookup -subtable uSessions $UserName]
+            if { $persistIP != "" } {
+                set sesCount [table lookup -subtable sessionCount $persistIP]
+                log local0. "DEBUG(3) Before $sesCount"
+                if { ($sesCount != 0) && ($sesCount != "" ) } { set sesCount [expr $sesCount -1] }
+                table set -notouch -subtable sessionCount $persistIP $sesCount
+                if { $static::debugopt } {
+                    log local0. "DEBUG(3) Now: [table lookup -subtable sessionCount $persistIP]"
+                    log local0. "DEBUG(3) [call dumpSessions]"
+                    log local0. "DEBUG(3) [call dumpUserTable]"
+                }
+            }
+        }
+        call clearUserTable
+    }
+}
