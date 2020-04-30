@@ -158,7 +158,7 @@ proc checkHealth { nodeIP } {
 when RULE_INIT {
 
     # Need more details, you know what to do
-    # Replace pName value with name of the (base64) pool 
+    # Replace pNameEnc value with name of the (base64) pool 
     set static::debugopt 1
     set static::n1IP "10.34.24.200"
     set static::n2IP "10.34.26.101"
