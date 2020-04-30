@@ -1,16 +1,22 @@
-# This is an APM session and persistence management script for RDP server.
-# There is some crucial initialization part out of this iRule
-# Ther must be pool definition which we can use to check actual health status of servers.
+# This is an APM session and persistence management script for RDP service.
+# There is some crucial initialization part of this iRule
+# There must be pool definition which we can use to check actual health status of servers.
+# We do not use pool name here, instaed we convert its's name base64 hashed string. Becouse
+# most apm virtual server definitons don't use pools and this makes them allways available type virtual servers.
+# If you use real pool name in an iRule, the virtual server inherits pool's health status as it is own health status.
+# This is breaking allways available situation when pool has no healthy members and new connection requests will be rejected.
 # There are three table that maintains user sessions (uSessions), sessions on servers (sessionCount)
 # and some other caring functionalities (userTable)
 # table uSessions: <username> <PersistentServerIP> indef $static::lifespan
 # table sessionCount: <rdpServerIP> <AmountofActiveSessions> indef $static::lifespan
-# table userTable: <username> <Session SID of APM>	indef	$static::lifespan
+# table userTable: <username> <Session SID of APM>  indef $static::lifespan
 
 proc pickOneAvailable { } {
 	# check each member status of pool and connection counts
 	# if any of them healty, we can move on
 	# if not, return old school NULL
+	# i designed this function for a pool which has three servers.
+	
 	set n1Count [table lookup -subtable sessionCount $static::n1IP]
 	if { ($n1Count == "") || ($n1Count < 0) } {
 		set n1Count 0
@@ -152,6 +158,7 @@ proc checkHealth { nodeIP } {
 when RULE_INIT {
 
     # Need more details, you know what to do
+    # Replace pName value with name of the (base64) pool 
     set static::debugopt 1
     set static::n1IP "10.34.24.200"
     set static::n2IP "10.34.26.101"
