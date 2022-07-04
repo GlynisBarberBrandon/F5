@@ -36,7 +36,7 @@ HEADER="
 # made for this policy. The customizations are normally stored in separated files
 # under /config/ directory and here you can find them in a tar.xz archive file.
 # You have to unzip tar.xz archive and put all customizations under the config 
-# directory on F5. After then, you try to load the rest of the content stored
+# directory on F5. After then, you can try to load the rest of the content stored
 # in this file. Good lucks, because you'll need it...
 #
 "
