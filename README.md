@@ -10,6 +10,6 @@ Script provides two files which contains actual APM policy tree and relevant cus
 <br><br>
 <b>nstoF5</b>: This script aims to transform a Netscaler virtual server configuration and its corresponding contents to F5 configuration. Before going any further, you must be aware of some crucial points. First of all, it was designed to transform Netscaler virtual server configuration files to F5 virtual server configurations. This script uses seperate files that contains Netcaler virtual server configurations as an input. It is not designed to read whole "ns.conf" file. The seperated virtual server configuration files provided by another project which is created by "Carl Stalhood". ("https://github.com/cstalhood/Get-ADCVServerConfig/blob/master/Get-ADCVServerConfig.ps1" and "https://www.carlstalhood.com/netscaler-scripting/") Thanks to him for all his efforts. Because his efforts made this conversion job a lot easier. 
 
-On the other hand, I've added some lines to support special needs to fits only my case so please be prepared to change/modify some lines to get better conversions.
+On the other hand, I've added some lines to support special needs to fits only my case so please be prepared to modify some lines to get better conversions.
 
 The script doesn't aim to support every single feature exist on Netscaler. It only supports to conversion for well known generic features like Vs (name, destination, tcp/udp) definition, pool, persistence, monitor(s), cache, compression, certificate profiles.
