@@ -13,3 +13,5 @@ Script provides two files which contains actual APM policy tree and relevant cus
 On the other hand, I've added some lines to support special needs to fits only my case so please be prepared to modify some lines to get better conversions.
 
 The script doesn't aim to support every single feature exist on Netscaler. It only supports to conversion for well known generic features like Vs (name, destination, tcp/udp) definition, pool, persistence, monitor(s), cache, compression, certificate profiles.
+<br><br>
+</b>DNS_queryLogger.tcl</b> is an iRule that aims to send DNS requests as logs to remote server. Basically, there is a better way to achieve this if you have DNS license on your F5 devices. But if you don't have a DNS license you have to use another solution which is why i created this iRule.
