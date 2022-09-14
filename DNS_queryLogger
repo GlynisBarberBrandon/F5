@@ -66,5 +66,5 @@ when CLIENT_ACCEPTED {
     
     log local0. "Size: $size,  ID: $id,  Code: $rcode,  query: $query, query-type: $queryType"
     HSL::send $hsl "[IP::local_addr] Size: $size ID: $id  Query: $query, Query-Type: $queryType\n"
-    unset size id sflags rcode queryLength queryName q query queryType   
+    unset size id sflags rcode queryLength queryName q query queryType chr count  
 }
