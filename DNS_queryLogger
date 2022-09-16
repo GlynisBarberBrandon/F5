@@ -1,6 +1,6 @@
 when CLIENT_ACCEPTED {
-    # The syslog server defined below line.
-    # You may need to change it before use this iRule.
+    # The syslog server defined two lines below.
+    # You may need to change it before using this iRule.
     set hsl [HSL::open -proto UDP -pool syslog_srv_pool]
     
     set size [UDP::payload length]
