@@ -1,5 +1,6 @@
 when CLIENT_ACCEPTED {
-    
+    # The syslog server defined below line.
+    # You may need to change it before use this iRule.
     set hsl [HSL::open -proto UDP -pool syslog_srv_pool]
     
     set size [UDP::payload length]
@@ -29,9 +30,6 @@ when CLIENT_ACCEPTED {
             append queryName " "
             append queryName 46
             append queryName " "
-        } else {
-            #log local0. "BB: $chr and $queryName"
-            break
         }
     }
     
@@ -64,7 +62,8 @@ when CLIENT_ACCEPTED {
         default { set queryType "${queryType}:UNKONWN" }
     }
     
-    log local0. "Size: $size,  ID: $id,  Code: $rcode,  query: $query, query-type: $queryType"
-    HSL::send $hsl "[IP::local_addr] Size: $size ID: $id  Query: $query, Query-Type: $queryType\n"
-    unset size id sflags rcode queryLength queryName q query queryType chr count  
+    # After tests done, you may want to stop logging local file.
+    log local0. "Query From: [IP::client_addr] to: [IP::local_addr] Size: $size ID: $id  Query: $query Query-Type: $queryType"
+    HSL::send $hsl "Query From: [IP::client_addr] to: [IP::local_addr] Size: $size ID: $id  Query: $query Query-Type: $queryType\n"
+    unset size id sflags rcode queryLength queryStart queryName q query queryType chr count   
 }
