@@ -28,7 +28,7 @@
 
 
 # NS to F5 
-# Store a virtual server and its corresponding contents from a netscaler conf files to individual f5 config files.
+# Convert and store virtual server configuations (and its corresponding contents) from a netscaler conf files to individual f5 config files.
 # Before going further, you must be aware of some crucial points.
 # First of all, i designed this script to transform NS virtual server configuration to F5 config.
 # While looking for a way to trasnform configurations one to other, i simply wanted to make this easier as much as possible.
@@ -60,7 +60,7 @@ declare -A vsConstruct 		# Will be used when we constructing VServer definiton
 outputFile=$( echo "Vs_config_${fileName}" | sed -e 's,nsconfig,f5,g;' )
 namingIteration=1
 ECVTRANSFORM=1 # Use this switch (=1) for traslate all HTTP-ECV type monitors to HTTP/HTTPS type customized monitors which is default behavior.
-version="0.38"
+version="0.38.23"
 
 #### Templates #####
 external_http_monitor_template_1='
@@ -212,25 +212,25 @@ createPersistence(){
 			echo "URLPASSIVE persistence"
 			# According to below calculations, there is no lb vserver definition which uses "URLPASSIVE" type persistence.
 			# grep -rE "^add lb vserver(.*)URLPASSIVE" . | awk -F ":" '{ print $2 }'
-			notes+=("URLPASSIVE Persistence is in use here. But the related codes not ready yet...")
+			notes+=("URLPASSIVE Persistence is in use here. But the related codes are not ready yet...")
 		;;
 		CALLID)
 			echo "CALLID persistence"
 			# According to below calculation method, there are two lb vservers which uses CALLID type persistence.
 			# grep -rE "^add lb vserver(.*)CALLID" . | awk -F ":" '{ print $2 }'
-			notes+=("CALLID Persistence is in use here. But the related codes not ready yet...")
+			notes+=("CALLID Persistence is in use here. But the related codes are not ready yet...")
 		;;
 		RULE)
 			echo "RULE persistence"
 			# According to below calculation method, there are only two definition.
 			# grep -rE "^add lb vserver(.*)persis(.*)CALLID" . | awk -F ":" '{ print $2 }'
-			notes+=("RULE Persistence is in use here. But the related codes not ready yet...")
+			notes+=("RULE Persistence is in use here. But the related codes are not ready yet...")
 		;;
 		SSLSESSION)
 			echo "SSLSESSION persistence"
 			# According to below calcularion method, there plenty of (140) lb vserver definiton.
 			# grep -rE "^add lb vserver(.*)persis(.*)SSLSESSION" . | awk -F ":" '{ print $2 }' 
-			notes+=("SSLSESSION Persistence is in use here. But the related codes not ready yet...")
+			notes+=("SSLSESSION Persistence is in use here. But the related codes are not ready yet...")
 		;;
 		*)
 			echo "Different type of persistence"
@@ -274,7 +274,7 @@ createClientSSLProfile(){
 	sslConfLines=$( echo "$file" | grep -E "^(add|link) ssl certKey " )
 	read -r sslCert sslKey <<< $( echo "$sslConfLines" | grep -E "add ssl certKey ${clientSSLName} " | awk '$5 == "-cert" && $7 == "-key" { print $6" "$8 }' )
 	sslChain=$( echo "$sslConfLines" | grep -E "link ssl certKey ${clientSSLName} " | awk '{ print $5 }' )
-	clientSSLOptions=$( { so=$( echo "$file" | grep -E "^set ssl vserver ${lbVsrvName} " | awk -F " ${lbVsrvName} " '{ print $2 }' | sed -e 's,-,,g;s, DISABLED,DISABLED,g' | tr ' ' '\n' ); } && { echo "$so" | grep -E "ssl3DISABLED|tls1DISABLED|tls1DISABLED|tls12DISABLED" | sed -e 's,ssl3DISABLED,no-sslv3,g;s,tls1DISABLED,no-tlsv1,g;s,tls1DISABLED,no-tlsv1.1,g;s,tls12DISABLED,no-tlsv1.2,g'; } )
+	clientSSLOptions=$( { so=$( echo "$file" | grep -E "^set ssl vserver ${lbVsrvName} " | awk -F " ${lbVsrvName} " '{ print $2 }' | sed -e 's,-,,g;s, DISABLED,DISABLED,g' | tr ' ' '\n' ); } && { echo "$so" | grep -E "dtls1DISABLED|ssl3DISABLED|tls1DISABLED|tls1DISABLED|tls12DISABLED" | sed -e 's,dtls1DISABLED,no-dtls1,g;s,ssl3DISABLED,no-sslv3,g;s,tls1DISABLED,no-tlsv1,g;s,tls1DISABLED,no-tlsv1.1,g;s,tls12DISABLED,no-tlsv1.2,g'; } )
 	clientSSLOptions=$( echo "$clientSSLOptions" | tr '\n' ' ' | sed -e 's, $,,g' )
 	
 	if [[ -n $clientSSLName ]] && [[ -n $sslCert ]] && [[ -n $sslKey ]]; then
@@ -376,7 +376,7 @@ createFallbackPersistence(){
 responseHeaderReplace(){
 	# This function add a policy which replaces Server Herader from server response
 	# It's a globally declared feature and all virtual servers affected.
-local zws_ServerHeaderMofify='ltm policy /Common/modify_Server_header_policy {
+local gws_ServerHeaderMofify='ltm policy /Common/modify_Server_header_policy {
     requires { http }
     rules {
         replace_server_header_val {
@@ -386,7 +386,7 @@ local zws_ServerHeaderMofify='ltm policy /Common/modify_Server_header_policy {
                     response
                     replace
                     name Server
-                    value zws
+                    value gws
                 }
             }
             conditions {
@@ -395,7 +395,7 @@ local zws_ServerHeaderMofify='ltm policy /Common/modify_Server_header_policy {
                     response
                     name Server
                     not
-                    values { zws }
+                    values { gws }
                 }
             }
         }
@@ -411,9 +411,95 @@ local zws_ServerHeaderMofify='ltm policy /Common/modify_Server_header_policy {
 		echo "$file" | grep "$m" > /dev/null 2>&1
 		if [ $? -eq 0 ]; then k+=$( echo -n 1 ); else k+=$( echo -n 0 ); fi
 	done
-	(( $k == 111 )) && { VSBODY[policies]+="modify_Server_header_policy,"; vsConstruct[policy]+="${zws_ServerHeaderMofify},"; }
+	(( $k == 111 )) && { VSBODY[policies]+="modify_Server_header_policy,"; vsConstruct[policy]+="${gws_ServerHeaderMofify},"; }
 
 }
+
+policy_add_X-ip_X-Port(){
+# This function adds a policy which inserts "X-ip" and "X-Port" headers. 
+	local headerInsert_x_ip_x_port='ltm policy /Common/policy_X-ip-auto_X-port-auto {
+    requires { http }
+    rules {
+        Insert_X-Port_Header {
+            actions {
+                0 {
+                    http-header
+                    insert
+                    name X-Port
+                    value [TCP::client_port]
+                }
+            }
+            ordinal 1
+        }
+        Insert_X-ip_Header {
+            actions {
+                0 {
+                    http-header
+                    insert
+                    name X-ip
+                    value [IP::client_addr]
+                }
+            }
+        }
+    }
+    strategy /Common/first-match
+}'
+	local str1="bind lb vserver (.*) -policyName insert-X-ip -priority"
+	local str2="bind lb vserver (.*) -policyName Send-Xport-policy -priority"
+
+	local k="" m
+	for m in "$str1" "$str2"
+	do
+		echo "$file" | grep -E "$m" > /dev/null 2>&1
+		if [ $? -eq 0 ]; then k+=$( echo -n 1 ); else k+=$( echo -n 0 ); fi
+	done
+	(( $k == 11 )) && { VSBODY[policies]+="policy_X-ip-auto_X-port-auto,"; vsConstruct[policy]+="${headerInsert_x_ip_x_port},"; }
+
+}
+
+policy_add_X-ip-auto_X-Port-auto(){
+# This function adds a policy which inserts "X-ip" and "X-Port" headers. 
+	local headerInsert_x_ip_auto_x_port_auto='ltm policy /Common/policy_X-ip-dst-auto_X-port-auto {
+    requires { http }
+    rules {
+        Insert_X-Port_Header {
+            actions {
+                0 {
+                    http-header
+                    insert
+                    name X-Port
+                    value [TCP::client_port]
+                }
+            }
+            ordinal 1
+        }
+        Insert_X-ip_Header {
+            actions {
+                0 {
+                    http-header
+                    insert
+                    name X-ip
+                    value [IP::local_addr]
+                }
+            }
+        }
+    }
+    strategy /Common/first-match
+}'
+	local str1="bind lb vserver (.*) -policyName add_X-ip-auto -priority"
+	local str2="bind lb vserver (.*) -policyName add_X-port-auto -priority"
+	local str3="add rewrite action add_X-ip-auto insert_http_header X-ip CLIENT.IP.DST"
+
+	local k="" m
+	for m in "$str1" "$str2" "$str3"
+	do
+		echo "$file" | grep -E "$m" > /dev/null 2>&1
+		if [ $? -eq 0 ]; then k+=$( echo -n 1 ); else k+=$( echo -n 0 ); fi
+	done
+	(( $k == 111 )) && { VSBODY[policies]+="policy_X-ip-dst-auto_X-port-auto,"; vsConstruct[policy]+="${headerInsert_x_ip_auto_x_port_auto},"; }
+
+}
+
 cachingProfile(){
 	# This func is adds caching pprofile if necessary
 	# The necessity comes from original NS.config and
@@ -472,9 +558,16 @@ createPoolv2(){
 						(( ! ${#poolMembers[@]} )) && { log_err "Ooops, there is no pool member ? Quit..."; exit 39; }
 						for member in "${!poolMembers[@]}"
 						do
-							
-							poolDefinition=$(echo "${poolDefinition}"; echo "        /Common/$(echo ${poolMembers[$member]} | awk -F ":" '{ if ( $2 == "*" ) print $3":0"; else print $3":"$2 }' ) {")
-							poolDefinition=$(echo "${poolDefinition}"; echo "            address $( echo ${poolMembers[$member]} | awk -F ":" '{ print $1 }' )")
+							if [ -z ${sg_params[td]} ]; then
+								poolDefinition=$(echo "${poolDefinition}"; echo "        /Common/$(echo ${poolMembers[$member]} | awk -F ":" '{ if ( $2 == "*" ) print $3":0"; else print $3":"$2 }' ) {")
+								poolDefinition=$(echo "${poolDefinition}"; echo "            address $( echo ${poolMembers[$member]} | awk -F ":" '{ print $1 }' )")
+							else
+							# When there is a "-td" pramaneter in serviceGroup definition, we can add necessary RD part for IP addressess used in pool.
+							# in poolMember[member] ==> 10.31.80.222:8070:TD_170_10.31.80.222:E:170 (IP:PORT:NAME:HEALTH_STATUS:TD)
+								poolDefinition=$(echo "${poolDefinition}"; echo "        /Common/$(echo ${poolMembers[$member]} | awk -F ":" '{ if ( $2 == "*" ) print $3"%"$5":0"; else print $3"%"$5":"$2 }' ) {")
+								poolDefinition=$(echo "${poolDefinition}"; echo "            address $( echo ${poolMembers[$member]} | awk -F ":" '{ print $1"%"$5 }' )")
+
+							fi
 							[[ ${poolMembers[$member]} == *:D ]] && poolDefinition=$(echo "${poolDefinition}"; echo "            session user-disabled")
 							poolDefinition=$(echo "${poolDefinition}"; echo "        }")
 						
@@ -518,8 +611,10 @@ createMonitor(){
 	local monitorName="$1"
 	local monType=""
 	local monLine=""
-	local f=""
-	local s=""
+	#~ local f=""
+	#~ local s=""
+	local start=0
+	local ii=0
 	
 	log_debug "12" "We will provide a monitor for $monitorName"
 	echo "$file" | grep -E "^add lb monitor ${monitorName} " > /dev/null 2>&1
@@ -530,13 +625,37 @@ createMonitor(){
 			declare -g monitorDef
 			declare -a tmpArry
 			log_debug "13" "monType: $monType  monLine: $monLine"
-			while read -r lines # Magnificent Line parser/delimiter!!
+			#~ while read -r lines # Magnificent Line parser/delimiter version1!!
+			#~ do
+				#~ f=$( echo "$lines" | cut -d " " -f 1 )
+				#~ s=$( echo "$lines" | cut -d " " -f 2- )
+				#~ log_debug "13" "MonitorParams: ${f} == ${s}"
+				#~ monitorParams["${f}"]="${s}"
+			#~ done <<< $( echo "$monLine" | tr '-' '\n' | sed -e '/^ *$/d' )
+			# Magnificent Line parser/delimiter version2!!
+			for line in $(echo "$monLine" | tr '-' '\n' | sed -e '/^ *$/d') 
 			do
-				f=$( echo "$lines" | cut -d " " -f 1 )
-				s=$( echo "$lines" | cut -d " " -f 2- )
-				log_debug "13" "MonitorParams: ${f} == ${s}"
-				monitorParams["${f}"]="${s}"
-			done <<< $( echo "$monLine" | tr '-' '\n' | sed -e '/^ *$/d' )
+			    if [[ $line =~ \" ]]; then
+			        if (( $start == 0 )); then
+				        start=1
+				    else 
+						start=0
+			            monitorParams["${tmp}"]+="$line"
+			            (( ii += 1 ))
+			            continue
+				    fi
+			    fi
+			    if [ $start -eq 1 ]; then
+			       monitorParams["${tmp}"]+="$line "
+			       continue
+			    fi
+			    if (( $ii % 2 == 0 )); then
+					  tmp="$line"
+				else
+					  monitorParams["${tmp}"]+="$line"
+			    fi
+			    (( ii += 1 ))
+			done
 			log_debug "14" "Monitor Parameters 2: $(declare -p monitorParams)"
 			# Replace " MIN(utes)" with " 60" in interval definition on monitor.
 			[[ ${monitorParams[resptimeout]} =~ MIN ]] && { monitorParams[resptimeout]=181; monitorParams[interval]=60; notes+=("Monitor tanımında dakika olarak görünen değerler degistirildi"); }
@@ -743,15 +862,15 @@ log_dbg() {
     fi
 }
 checkXFFRequire(){
-	# Sometimes XFF required globally despite definition CIP=DISABLE
+	# Sometimes XFF required globally despite the definition says "CIP=DISABLE"
 	local i e
-	local s1='bind rewrite global xff_header_insertion 100 END -type REQ_DEFAULT'
-	local s2='add rewrite policy xff_header_insertion true xff_header_insertion'
-	local s3='add rewrite action xff_header_insertion insert_http_header XFF CLIENT.IP.SRC'
+	local s1='add rewrite action act-add-X-Forwarded-For insert_http_header X-Forwarded-For CLIENT.IP.SRC'
+	local s2='add rewrite policy add-X-Forwarded-For TRUE act-add-X-Forwarded-For'
+	local s3="bind lb vserver (.*) -policyName add-X-Forwarded-For -priority"
 
 	for i in "$s1" "$s2" "$s3" 
 	do
-		echo "$file" | grep "${i}" > /dev/null 2>&1
+		echo "$file" | grep -E "${i}" > /dev/null 2>&1
 		if [ $? -eq 0 ]; then e+="1"; else e+="0"; fi
 	
 	done
@@ -919,9 +1038,20 @@ else
 		read sg type <<< $( echo "$file" | grep -E "^add serviceGroup " | awk '{ print $3" "$4 }' )
 		log_debug "23" "SG ${sg}, TYPE ${type}, Server Array : $(declare -p servers)"
 		# port numbers and monitor definition. Also get their status definition. "disable" or not
-		# We store all values according to schema defined in createPoolv2() function which is => poolMembers[0]="${Service-IP}:${Service-Port}:${Server-Name}:${Service-State}"
+		# We store all values according to schema defined in createPoolv2() function which is => poolMembers[0]="${Service-IP}:${Service-Port}:${Server-Name}:${Service-State}:${TrafficDomainNumber}"
 		declare -a poolMembers
-		read -a poolMembers <<< $( for i in "${!SERVERS[@]}"; do echo "$file" | grep -E "^bind serviceGroup ${sg} " | grep "$i" | sed -s 's,bind serviceGroup ,,g' | awk -v name="$i" -v ip="${SERVERS[$i]}" '{ if ($0 ~ /state\ DISABLED/) { print ip":"$3":"name":D" } else { print ip":"$3":"name":E" } }' | tr '\n' ' ' ;  done )
+		# td7rd support added for pool members
+		#read -a poolMembers <<< $( for i in "${!SERVERS[@]}"; do echo "$file" | grep -E "^bind serviceGroup ${sg} " | grep "$i" | sed -s 's,bind serviceGroup ,,g' | awk -v name="$i" -v ip="${SERVERS[$i]}" '{ if ($0 ~ /state DISABLED/) { print ip":"$3":"name":D" } else { print ip":"$3":"name":E" } }' | tr '\n' ' ' ;  done )
+		read -a poolMembers <<< $( for i in "${!SERVERS[@]}"
+			 do
+			 
+			  td=$( echo "$file" | grep -E "^add server (.*) -td " | grep "${SERVERS[$i]}" | awk -F "-td " '{ print $2 }' | cut -d " " -f1 )
+			  if [ -z $td ]; then
+			      echo "$file" | grep -E "^bind serviceGroup ${sg} " | grep "$i" | sed -s 's,bind serviceGroup ,,g' | awk -v name="$i" -v ip="${SERVERS[$i]}" '{ if ($0 ~ /state DISABLED/) { print ip":"$3":"name":D" } else { print ip":"$3":"name":E" } }' | tr '\n' ' ' 
+			  else
+				  echo "$file" | grep -E "^bind serviceGroup ${sg} " | grep "$i" | sed -s 's,bind serviceGroup ,,g' | awk -v name="$i" -v ip="${SERVERS[$i]}" -v td="$td" '{ if ($0 ~ /state DISABLED/) { print ip":"$3":"name":D:"td } else { print ip":"$3":"name":E:"td } }' | tr '\n' ' ' 
+			  fi
+			 done )
 		log_debug "24" "poolMembers Array: $(declare -p poolMembers)"
 
 fi
@@ -1009,7 +1139,11 @@ createPoolv2
 # The Name of Virtual Server is ready
 VSBODY[name]="${lbVsrvName}_vs"
 [[ $vsPort == \* ]] && vsPort=0
-VSBODY[destination]="${vsIP}:${vsPort}"
+if [ -z ${lbVsrvParams[td]} ]; then
+	VSBODY[destination]="${vsIP}:${vsPort}"
+else 
+	VSBODY[destination]="${vsIP}%${lbVsrvParams[td]}:${vsPort}"
+fi
 [[ ${vsIP} == "0.0.0.0" ]] && (( $vsPort != 0 )) && notes+=("Virt. Server Destination ${vsIP}:${vsPort}. Bu tip ANY:IP Forwarding tanimlara dikkat edilmeli.")
 [[ ${vsIP} == "0.0.0.0" ]] && (( $vsPort == 0 )) && notes+=("Virt. Server Destination ${vsIP}:${vsPort}. Bu tip ANY:IP Forwarding tanimlara dikkat edilmeli.")
 # Netscaler default types HTTP, FTP, TCP, UDP, SSL, SSL_BRIDGE, SSL_TCP, DTLS, NNTP
@@ -1028,18 +1162,22 @@ if [[ ${sg_params[cip]} == ENABLED* ]] && ( [ $lbVsrvType == SSL ] || [ $lbVsrvT
     # There are a couple of different methods to carry client ip info through traffic
     # One of the easiest methods is storing this information in a http header.
     # So, here is a http profile which inserts a header in a http transaction.
-	log_debug "21" "Creating a HTTP Profile client IP header insert and with server-agent-name zws"
+	log_debug "21" "Creating a HTTP Profile client IP header insert and with server-agent-name gws"
 	headerName=$(echo ${sg_params[cip]} | awk '{ print $2 }')
 	http_profile=""
 	if [[ $namingIteration ]]; then
-		http_profileName="${lbVsrvName}_insert_${headerName}_http" # Http Profile names must be inserted with a pair of curl braces ( "{ }" ).
+		http_profileName="${lbVsrvName}_insert_${headerName}_http" # Http Profile names must be inserted with a pair of curly braces ( "{ }" ).
 	else
 		http_profileName="insert_${headerName}_http"
 	fi
 	http_profile=$( echo "ltm profile http /Common/${http_profileName} {" )
 	http_profile=$( echo "$http_profile"; echo -e "    defaults-from /Common/http" )
-	http_profile=$( echo "$http_profile"; echo -e "    header-insert \"${headerName}: [IP::remote_addr]\"" )
-	http_profile=$( echo "$http_profile"; echo -e "    server-agent-name zws")
+	if [[ $headerName == X-Forwarded-For ]]; then
+		http_profile=$( echo "$http_profile"; echo -e "    insert-xforwarded-for enabled" )
+	else
+		http_profile=$( echo "$http_profile"; echo -e "    header-insert \"${headerName}: [IP::remote_addr]\"" )
+	fi
+	http_profile=$( echo "$http_profile"; echo -e "    server-agent-name gws")
 	[[ ${lbVsrvParams[redirectURL]} ]] && http_profile=$( echo "$http_profile"; echo -e "    fallback-host ${lbVsrvParams[redirectURL]}" ) #fallback-host https://www.google.com/
 	http_profile=$( echo "$http_profile"; echo -e "}" )
 	
@@ -1049,14 +1187,14 @@ if [[ ${sg_params[cip]} == ENABLED* ]] && ( [ $lbVsrvType == SSL ] || [ $lbVsrvT
 	unset headerName http_profile http_profileName
 	
 elif [[ ${sg_params[cip]} == DISABLED ]] && ( [[ $lbVsrvType == SSL ]] || [[ $lbVsrvType == HTTP ]] ) && [[ ${VSBODY[ip-protocol]} == tcp ]]; then
-	log_debug "21" "Creating a blank HTTP Profile with server-agent-name zws"
+	log_debug "21" "Creating a blank HTTP Profile with server-agent-name gws"
 	
 	http_profile=""
 	if [[ $namingIteration ]]; then
 		http_profileName="${lbVsrvName}_http" # Http Profile names must be inserted with a pair of curl braces ( "{ }" ).
 		http_profile=$( echo "ltm profile http /Common/${http_profileName} {" )
 		http_profile=$( echo "$http_profile"; echo -e "    defaults-from /Common/http" )
-		http_profile=$( echo "$http_profile"; echo -e "    server-agent-name zws")
+		http_profile=$( echo "$http_profile"; echo -e "    server-agent-name gws")
 		[[ $( checkXFFRequire ) == TRUE ]] && http_profile=$( echo "$http_profile"; echo -e "    header-insert \"XFF: [IP::remote_addr]\"" ) # make an additional check for X-Forwarded-For Header
 		[[ ${lbVsrvParams[redirectURL]} ]] && http_profile=$( echo "$http_profile"; echo -e "    fallback-host ${lbVsrvParams[redirectURL]}" ) #fallback-host https://www.google.com/
 		http_profile=$( echo "$http_profile"; echo -e "}" )
@@ -1095,9 +1233,12 @@ if [[ ${VSBODY[ip-protocol]} == tcp ]] && ( (( ${lbVsrvParams[cltTimeout]} > 300
 		vsConstruct[profiles]+="${serverTcpProfile},"
 		
 fi
-
+# There is a master switch ("enable ns feature cmp") which enables Compressin on device wide. If "enable ns feature" line doesn't contain 
+# "cmp" keyword then there is no way to have compression enabled/use in virtual servers. We have to check it first!
+echo "$file" | grep -E "enable ns feature (.*) cmp" > /dev/null 2>&1
+NSFEATURE_CMP=$?
 # Compression aka "CMP == YES" in Service Group definition
-if [[ ${sg_params[CMP]} == YES ]] && ( [[ $type == HTTP ]] || [[ $type == SSL ]] ) && ( [[ $lbVsrvType == HTTP ]] || [[ $lbVsrvType == SSL ]] ); then
+if [[ ${sg_params[CMP]} == YES ]] && [[ $NSFEATURE_CMP == 0 ]] && ( [[ $type == HTTP ]] || [[ $type == SSL ]] ) && ( [[ $lbVsrvType == HTTP ]] || [[ $lbVsrvType == SSL ]] ); then
 	compression="httpcompression"
 	VSBODY[profiles]+="${compression},"
 	# Due to default compression profile attached here, we won't add any detail for it.
@@ -1111,14 +1252,25 @@ fi
 [[ ${lbVsrvParams[persistenceBackup]} != "" ]] && { createFallbackPersistence; }
 
 # Is USIP (-usip YES) enabled ?
-# This means we have to turn off SNAT feature in F5 vs definiton.
-log_debug "21" "USIP is ${sg_params[usip]} // SNAT -> automap"
-if [[ ${sg_params[usip]} == "NO" ]]; then # this is used for only SNAT Auto-Map enable or disable. No Support for SNAT POOL !!! 
-	VSBODY[snat-addr]="automap"
+# This means we have to turn off SNAT feature in F5 virtual server definiton.
+# But, In order to control SNAT behavior ("-usip YES" fetaure) within virtual servers individually, 
+# there must be a "enable ns mode" line which must be contains "USIP" word. Otherwise,
+# there is no meaningful reason of using "-usip YES" in "add servicegroup" line.
+echo "$file" | grep -E "enable ns mode (.*) USIP" > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+	# USIP enable globally
+	log_debug "21" "USIP is ${sg_params[usip]} // SNAT (automap or no) configuration"
+	if [[ ${sg_params[usip]} == "NO" ]]; then # this is used for only SNAT Auto-Map enable or disable. No Support for SNAT POOL !!! 
+		VSBODY[snat-addr]="automap"
+	else
+		notes+=("Dikkat: SNAT kapalı. Sunucuların default gw'i F5 olmalı ve sunucuların network'e erisebilmeleri için ANY tipinde bir VS olusturulmalı.")
+	fi
 else
-	notes+=("Dikkat: SNAT kapalı. Sunucuların default gw'i F5 olmalı ve sunucuların network'e erisebilmeleri için ANY tipinde bir VS olusturulmalı.")
+	# no way to control snat behavior within servicegroup definitions.
+	log_debug "21" "USIP (for controlling <SNAT Automap> feature in any virtual server individually) is globally turned off in <enable ns mode> line"
+	VSBODY[snat-addr]="automap"
+	notes+=("Global SNAT anahtarı <enable ns mode USIP> kapalı, bu nedenle SNAT automap olarak ayarlandı. ")
 fi
-
 log_debug "22" "Service Group Type: ${type} & LB Vserver Type is ${lbVsrvType}"  
 
 declare -a clientSSLProfiles
@@ -1159,7 +1311,21 @@ unset serverSSLProfiles serverSSLProfile
 if ( [[ $type == SSL ]] || [[ $type == HTTP ]] ) && ( [[ $lbVsrvType == HTTP ]] || [[ $lbVsrvType == SSL ]] ); then
 	cachingProfile
 	responseHeaderReplace
+	policy_add_X-ip_X-Port
+	policy_add_X-ip-auto_X-Port-auto
 fi
+
+### VSBODY[translate-addr] and VSBODY[translate-port] features configured here
+# Looks like Citrix uses destination nat (both for address and port informations) on any regular virtual server definitions.
+# But not so sure about that assumption, so adding below code here to generate necessary conf for F5.
+# There is a switch which controls the destination nat behavior (https://docs.netscaler.com/en-us/citrix-adc/current-release/load-balancing/load-balancing-customizing/customize-redirection-mode.html)
+# so we can use it. However, i just add the necessary variables here. Later, we can add the code for reading redirection feature.
+VSBODY[translate-addr]="enabled"
+VSBODY[translate-port]="enabled"
+
+
+### VSBODY[source] variable populates here.
+# There is no need to add "source 0.0.0.0/0" here because F5 assumes it as default unless we told anything else
 
 
 
@@ -1247,10 +1413,10 @@ fi
 		echo "        /Common/${line}"
 	done
 	echo "    }"; } && unset VSBODY[rules]
-[[ ${VSBODY[source]} ]] && echo "    source ${VSBODY[source]}"
+[[ ${VSBODY[source]} ]] && echo "    source ${VSBODY[source]}" && unset VSBODY[source]
 [[ ${VSBODY[snat-addr]} ]] && { echo "    source-address-translation {"; echo "        type ${VSBODY[snat-addr]}"; echo "    }"; } && unset VSBODY[snat-addr]
-[[ ${VSBODY[translate-addr]} ]] && echo "    translate-address ${VSBODY[translate-addr]}"
-[[ ${VSBODY[translate-port]} ]] && echo "    translate-port ${VSBODY[translate-port]}"
+[[ ${VSBODY[translate-addr]} ]] && echo "    translate-address ${VSBODY[translate-addr]}" && unset VSBODY[translate-addr]
+[[ ${VSBODY[translate-port]} ]] && echo "    translate-port ${VSBODY[translate-port]}" && unset VSBODY[translate-port]
 echo "}" # This is the final curly brace of VSBODY
 
 echo "#----------------------------------------------------------------#"
@@ -1273,11 +1439,14 @@ if [ ${#vsConstruct[@]} -ne 0 ]; then
 	for part in "${!vsConstruct[@]}"
 	do
 		if [[ ${vsConstruct[$part]} =~ }, ]]; then
-			echo -e "### ${part}::\n${vsConstruct[$part]}" | sed -e "s/},/}\n/g"
+			echo -e "### ${part}::"
+			echo "${vsConstruct[$part]}" | sed -e "s/},/}\n/g"
 		elif [[ ${vsConstruct[$part]} =~ , ]];then
-			echo -e "### ${part}::\n${vsConstruct[$part]}" | sed -e "s/,/\n/g"
+			echo -e "### ${part}::"
+			echo "${vsConstruct[$part]}" | sed -e "s/,/\n/g"
 		else
-			echo -e "### ${part}::\n${vsConstruct[$part]}"
+			echo -e "### ${part}::"
+			echo "${vsConstruct[$part]}"
 		fi
 	done
 
