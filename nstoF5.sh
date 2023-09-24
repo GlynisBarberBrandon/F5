@@ -274,7 +274,7 @@ createClientSSLProfile(){
 	sslConfLines=$( echo "$file" | grep -E "^(add|link) ssl certKey " )
 	read -r sslCert sslKey <<< $( echo "$sslConfLines" | grep -E "add ssl certKey ${clientSSLName} " | awk '$5 == "-cert" && $7 == "-key" { print $6" "$8 }' )
 	sslChain=$( echo "$sslConfLines" | grep -E "link ssl certKey ${clientSSLName} " | awk '{ print $5 }' )
-	clientSSLOptions=$( { so=$( echo "$file" | grep -E "^set ssl vserver ${lbVsrvName} " | awk -F " ${lbVsrvName} " '{ print $2 }' | sed -e 's,-,,g;s, DISABLED,DISABLED,g' | tr ' ' '\n' ); } && { echo "$so" | grep -E "dtls1DISABLED|ssl3DISABLED|tls1DISABLED|tls1DISABLED|tls12DISABLED" | sed -e 's,dtls1DISABLED,no-dtls1,g;s,ssl3DISABLED,no-sslv3,g;s,tls1DISABLED,no-tlsv1,g;s,tls1DISABLED,no-tlsv1.1,g;s,tls12DISABLED,no-tlsv1.2,g'; } )
+	clientSSLOptions=$( { so=$( echo "$file" | grep -E "^set ssl vserver ${lbVsrvName} " | awk -F " ${lbVsrvName} " '{ print $2 }' | sed -e 's,-,,g;s, DISABLED,DISABLED,g' | tr ' ' '\n' ); } && { echo "$so" | grep -E "dtls1DISABLED|ssl3DISABLED|tls1DISABLED|tls1DISABLED|tls12DISABLED" | sed -e 's,dtls1DISABLED,no-dtls,g;s,ssl3DISABLED,no-sslv3,g;s,tls1DISABLED,no-tlsv1,g;s,tls1DISABLED,no-tlsv1.1,g;s,tls12DISABLED,no-tlsv1.2,g'; } )
 	clientSSLOptions=$( echo "$clientSSLOptions" | tr '\n' ' ' | sed -e 's, $,,g' )
 	
 	if [[ -n $clientSSLName ]] && [[ -n $sslCert ]] && [[ -n $sslKey ]]; then
@@ -426,7 +426,7 @@ policy_add_X-ip_X-Port(){
                     http-header
                     insert
                     name X-Port
-                    value [TCP::client_port]
+                    value tcl:[TCP::client_port]
                 }
             }
             ordinal 1
@@ -437,7 +437,7 @@ policy_add_X-ip_X-Port(){
                     http-header
                     insert
                     name X-ip
-                    value [IP::client_addr]
+                    value tcl:[IP::client_addr]
                 }
             }
         }
@@ -468,7 +468,7 @@ policy_add_X-ip-auto_X-Port-auto(){
                     http-header
                     insert
                     name X-Port
-                    value [TCP::client_port]
+                    value tcl:[TCP::client_port]
                 }
             }
             ordinal 1
@@ -479,7 +479,7 @@ policy_add_X-ip-auto_X-Port-auto(){
                     http-header
                     insert
                     name X-ip
-                    value [IP::local_addr]
+                    value tcl:[IP::local_addr]
                 }
             }
         }
@@ -1195,7 +1195,8 @@ elif [[ ${sg_params[cip]} == DISABLED ]] && ( [[ $lbVsrvType == SSL ]] || [[ $lb
 		http_profile=$( echo "ltm profile http /Common/${http_profileName} {" )
 		http_profile=$( echo "$http_profile"; echo -e "    defaults-from /Common/http" )
 		http_profile=$( echo "$http_profile"; echo -e "    server-agent-name gws")
-		[[ $( checkXFFRequire ) == TRUE ]] && http_profile=$( echo "$http_profile"; echo -e "    header-insert \"XFF: [IP::remote_addr]\"" ) # make an additional check for X-Forwarded-For Header
+		#~ [[ $( checkXFFRequire ) == TRUE ]] && http_profile=$( echo "$http_profile"; echo -e "    header-insert \"X-Forwarded-For: [IP::remote_addr]\"" ) # make an additional check for X-Forwarded-For Header
+		[[ $( checkXFFRequire ) == TRUE ]] && http_profile=$( echo "$http_profile"; echo -e "    insert-xforwarded-for enabled" ) # make an additional check for X-Forwarded-For Header
 		[[ ${lbVsrvParams[redirectURL]} ]] && http_profile=$( echo "$http_profile"; echo -e "    fallback-host ${lbVsrvParams[redirectURL]}" ) #fallback-host https://www.google.com/
 		http_profile=$( echo "$http_profile"; echo -e "}" )
 		
