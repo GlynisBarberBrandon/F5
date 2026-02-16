@@ -12,7 +12,7 @@
 #	Caution: It's better you run this script in the directory where extracted of Qkview or UCS file, because all files store in
 #			 that directory and we never know where to look for those files.
 #
-#	Fatih Celik : 2020-Dec-30
+#	Michael Jackson : 2020-Dec-30
 #
 
 ##### Global Variables #####
