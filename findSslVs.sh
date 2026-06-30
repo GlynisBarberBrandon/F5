@@ -1,8 +1,12 @@
 #!/bin/bash
 
+if [ $# -lt 1 ]; then
+    echo -e "\tERR: Syntax is findSslVs.sh bigip.conf"
+    exit
+fi
 confFile="$1"
 
-read -a clientssl <<< $( grep -E "ltm profile client-ssl" config/bigip.conf | awk '{ print $4 }' | tr '\n' ' ' )
+read -a clientssl <<< $( grep -E "ltm profile client-ssl" "$confFile" | awk '{ print $4 }' | tr '\n' ' ' )
 read -a vslist <<< $( grep -nE "ltm virtual " "$confFile" | sed -e 's,ltm virtual ,,g;s, {$,,g' | tr '\n' ' ')
 
 
@@ -79,6 +83,7 @@ fi
 #~ declare -p vslist | tr ' ' '\n'
 #~ echo "------"
 declare -a found
+declare -A VS
 for (( i = 0; i < ${#vslist[@]}; i++)){
 	start=$( echo ${vslist[i]} | awk -F':' '{ print $1 }' )
 	end=$( echo ${vslist[i+1]} | awk -F':' '{ print $1 -1 }' )
@@ -97,6 +102,7 @@ for (( i = 0; i < ${#vslist[@]}; i++)){
 		if [ $? -ne 0 ]; then
 			continue
 		else
+            VS[${name}]="${clientssl[m]}"
 			found+=($i)
 			r=1
 			break
@@ -107,6 +113,11 @@ for (( i = 0; i < ${#vslist[@]}; i++)){
 		[ $? -eq 0 ] && found+=($i) 
 	fi
 }
+echo "The list of Virtual Servers which has at least one ClientSSL profile"
+for k in "${!VS[@]}"
+do
+    echo "# ${k} -> ${VS[$k]}"
+done
 
 for m in "${!found[@]}"
 do
