@@ -102,10 +102,10 @@ for (( i = 0; i < ${#vslist[@]}; i++)){
 		if [ $? -ne 0 ]; then
 			continue
 		else
-            VS[${name}]="${clientssl[m]}"
+            VS[${name}]="${VS[${name}]} ${clientssl[m]}"
 			found+=($i)
 			r=1
-			break
+			#break
 		fi
 	done
 	if [ $r -eq 0 ]; then
@@ -113,11 +113,18 @@ for (( i = 0; i < ${#vslist[@]}; i++)){
 		[ $? -eq 0 ] && found+=($i) 
 	fi
 }
-echo "The list of Virtual Servers which has at least one ClientSSL profile"
+echo "# The List of Virtual Servers which has at least one ClientSSL profile (Total: ${#VS[@]})"
+echo -e "# VirtServer\t\t\t ClientSSL Profile(s)"   
 for k in "${!VS[@]}"
 do
-    echo "# ${k} -> ${VS[$k]}"
+    printf "%s %45s\n" "${k}" "${VS[$k]}"
 done
+
+echo "# The list of ClientSSL profiles found in config file (Total: ${#clientssl[@]})"
+for n in "${!clientssl[@]}"
+do
+    echo -e "${clientssl[$n]}"
+done 
 
 for m in "${!found[@]}"
 do
@@ -126,7 +133,7 @@ done
 
 vslist=("${vslist[@]}")
 echo "#######################################################"
-echo "There are ${#vslist[@]} virtual servers which don't have any Client-SSL profile"
+echo "# There are ${#vslist[@]} virtual servers which don't have any Client-SSL profile"
 declare -p vslist | tr ' ' '\n' | sed -e 's,\"[0-9]\+\:,\",g'
 echo "#######################################################"
 echo "#######################################################"
